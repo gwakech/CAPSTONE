@@ -1,0 +1,313 @@
+---
+title: "Capstone-Milestone Report"
+author: "George Akech"
+date: "February 12, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+```
+####Goal
+
+The goal of this capstone project is  to build a predictive text model application  which demostrate and display  how  we  work with the data.
+
+To  show  we are on track to create prediction algorithm, we need to: 
+
+
+1.	Demonstrate that we have downloaded the data and have successfully loaded it in.
+
+2.	Create a basic report of summary statistics about the data sets.
+
+3.	Report any interesting findings that we have amassed so far.
+
+4.	Get feedback on the plans for creating a prediction algorithm and Shiny app.
+
+```{r}
+```
+
+####Report
+
+The milestone report show that when  users provide unigram, bigram, trigram or a phrase and the application attempts to predict the next word. The model is trained using a corpus (a collection of English text) that is compiled from 3 sources - news, blogs, and tweets
+
+(i)    Significant part of dictionary consists of very rare words. So dictionary can be reduced.
+
+(ii)   Corpus coverage has logarithmic dependency on dictionary size.
+ 
+(iii)  Most efficient model could cover only ~70% of the language.
+
+
+
+```{r}
+```
+
+####1. Set up Working Directory
+```{r Working Directory}
+setwd("C:/Users/Family/Desktop/Coursera/CAPSTONE/FPReport")
+```
+
+```{r}
+```
+####2. Set up Libraries
+
+```{r,warning=FALSE,echo=TRUE, Libraries}
+library(knitr)
+library(dplyr, quietly = TRUE, warn.conflicts = FALSE)
+library(doParallel, quietly = TRUE, warn.conflicts = FALSE)
+library(stringi, quietly = TRUE, warn.conflicts = FALSE) # stats files
+library(NLP, quietly = TRUE, warn.conflicts = FALSE)
+library(openNLP, quietly = TRUE, warn.conflicts = FALSE )
+library(tm, quietly = TRUE, warn.conflicts = FALSE ) # Text mining
+library(rJava, quietly = TRUE, warn.conflicts = FALSE )
+library(RWeka, quietly = TRUE, warn.conflicts = FALSE) # tokenizer - create unigrams, bigrams, trigrams
+library(RWekajars, quietly = TRUE, warn.conflicts = FALSE)
+library(SnowballC, quietly = TRUE, warn.conflicts = FALSE) # Stemming
+library(RColorBrewer, quietly = TRUE, warn.conflicts = FALSE) # Color palettes
+library(qdap, quietly = TRUE, warn.conflicts = FALSE)
+library(wordcloud,quietly = TRUE, warn.conflicts = FALSE)
+library(ggplot2, quietly = TRUE, warn.conflicts = FALSE ) #visualization
+library(gridExtra,quietly = TRUE, warn.conflicts = FALSE)
+library(shinythemes,quietly = TRUE, warn.conflicts = FALSE)
+
+```
+
+####3. Download the data from HC Corpora
+The data from HC Corpora comes in 4 languages. This  report uses US-English. 
+This dataset has three files - en_US.blogs.txt,en_US.news.txt and en_US.twitter.txt. 
+
+```{r Download corpora files}
+if(!file.exists("data")) {dir.create("./data")
+fileUrl <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+download.file(fileUrl, destfile = "./data/Coursera-SwiftKey.zip")
+unzip("./data/Coursera-SwiftKey.zip", exdir = "./data")}
+```
+
+####4. Set communication path for reading the files
+```{r set the path}
+path1 <- "./data/final/en_US/en_US.blogs.txt"
+path2 <- "./data/final/en_US/en_US.news.txt"
+path3 <- "./data/final/en_US/en_US.twitter.txt"
+```
+####5. Read the files
+
+```{r}
+conn <- file(path1, open="rb");blogs <- readLines(conn, encoding="UTF-8", skipNul=TRUE); close(conn)
+conn <- file(path2, open="rb");news <- readLines(conn, encoding="UTF-8",skipNul = TRUE); close(conn)
+conn <- file(path3, open="rb");twitter <- readLines(conn, encoding="UTF-8",skipNul = TRUE); close(conn)
+rm(conn)
+```
+
+####6. Summary Statistics
+```{r Summary Statistics}
+stats_for_raw <- data.frame(
+            FileName=c("en_US.blogs","en_US.news","en_US.twitter"),
+            FileSizeinMB=c(file.info(path1)$size/1024^2,
+                           file.info(path2)$size/1024^2,
+                           file.info(path3)$size/1024^2),
+            t(rbind(sapply(list(blogs,news,twitter),stri_stats_general),
+            WordCount=sapply(list(blogs,news,twitter),stri_stats_latex)[4,]))
+            )
+kable(stats_for_raw)
+
+```
+
+```{r}
+```
+
+####7. Longest line 
+```{r longest line}
+mblog <- max(nchar(blogs)) 
+mnews <- max(nchar(news))   
+mtwitter <- max(nchar(twitter))
+A=matrix(c(mblog,mnews,mtwitter),nrow = 1,ncol = 3, byrow = TRUE)
+#dimnames(A) = list(c("mlog","mnews","mtwitter"))
+dimnames(A)=list(("MaxNChar"), c("Blogs","News","Twitter"))
+head.matrix(A)
+#row(mblog,mnews,mtwitter)
+```
+
+####8. - Data Summary Observed
+.	Each file has more than 200 MB.
+.	The number of words is more than 30 million per file.
+.	Twitter is the big file with more lines, and fewer words per line (as expected 140 lines limited and with 2,360,148 lines).
+.	Blogs are the text file with sentences and has the longest line with 40,833 characters.
+.	News are the text file with more long paragraphs.
+```{r}
+```
+####9. Data Sample (subset)
+The data is enormous and could have poor performance in mobile. So, we must create a subset of the data considering the limited resources for test and application. Let's generate a data sample from the three files (blogs, news, Twitter)
+```{r}
+```
+######9.1 Simple Random sampling
+```{r Random Sample}
+set.seed(8000)
+sampleB <- blogs[sample(1:length(blogs), 8000, replace=FALSE)]
+sampleN <- news[sample(1:length(news), 8000, replace=FALSE)]
+sampleT <- twitter[sample(1:length(twitter), 8000, replace=FALSE)]
+#-----------
+N1 <- NROW(sampleB)
+N2 <- NROW(sampleN)
+N3 <- NROW(sampleT)
+sampleTotal <- c(sampleB, sampleN,sampleT)
+C <- length(sampleTotal)
+
+B =matrix(c(N1,N2,N3),nrow = 1,ncol = 3, byrow = TRUE)
+dimnames(B)=list(("NRows"), c(" sampleB"," sampleN"," sampleT"))
+head.matrix(B)
+K <-length(sampleTotal)
+#"Total" <-head(K)
+#head(Total)
+#-------
+#NROW(sampleB);NROW(sampleN);NROW(sampleT)
+#sampleTotal <- c(sampleB, sampleN,sampleT)
+#length(sampleTotal)
+writeLines(sampleTotal, "./sampleTotal.txt")
+
+```
+
+####9.2 Remove what is not required
+```{r,warning=FALSE,echo=FALSE}
+remove_odd <- function (x) {
+  s1 <- x
+  for (i in 1:length(s1)) {
+    original_row <- s1[i]
+    cleaned_row <- iconv(original_row, "UTF-8", "ASCII", sub = "")
+    s1[i] <- cleaned_row
+  }
+x <- s1
+}
+
+
+sampleB <- remove_odd(sampleB)
+sampleN <- remove_odd(sampleN)
+sampleT <- remove_odd(sampleT)
+```
+
+
+```{r Write Docs to Hard Disk}
+writeLines(Docs3 <- c(sampleB,sampleN,sampleT), "./sample/Docs3.txt")
+```
+####10. Sample dataframe
+```{r Sample data frame}
+NDF <- list(sampleB,sampleN,sampleT)
+corpus <- list()
+dtMatrix <- list()
+```
+####11. Clean Sample data
+```{r clean sample data}
+# Iterate each sampled corpus data to clean up and create DTM
+for (i in 1:length(NDF)) {
+    # Create corpus dataset
+   corpus[[i]] <- Corpus(VectorSource(NDF[[i]]))
+    # Cleaning Up corpus dataset
+   corpus[[i]] <- tm_map(corpus[[i]], tolower)
+    # Eleminate punctuation
+    corpus[[i]] <- tm_map(corpus[[i]], removePunctuation)
+    # Eleminate numbers
+    corpus[[i]] <- tm_map(corpus[[i]], removeNumbers)
+    # Strip Whitespace
+    corpus[[i]] <- tm_map(corpus[[i]], stripWhitespace)
+    # Eliminate profane words
+    profanewords <- readLines("./sample/Docs3.txt", n = 600)
+    #corpus[[i]] <- tm_map(corpus[[i]], removeWords, profanewords)
+    # Eleminate English stop words
+    corpus[[i]] <- tm_map(corpus[[i]], removeWords, stopwords("english"))
+    # Perform stemming
+    corpus[[i]] <- tm_map(corpus[[i]], stemDocument)
+    # Create plain text format
+    corpus[[i]] <- tm_map(corpus[[i]], PlainTextDocument)
+    # Calculate document term frequency for corpus
+    dtMatrix[[i]] <- DocumentTermMatrix(corpus[[i]], control=list(wordLengths=c(0,Inf)))
+}
+# Eleminate temporary variables
+rm(NDF)
+```
+####12. corpus with wordcloud
+```{r,warning=FALSE,echo=FALSE}
+library(wordcloud); library(slam)
+# Set random seed for reproducibility
+set.seed(2000)
+# Set Plotting in 1 row 3 columns
+par(mfrow=c(1, 3))
+Headings= c("Word Cloud - US English Blogs",
+            "Word Cloud - US English News", 
+            "Word Cloud - US English Twitter")
+
+# Iterate each corpus and DTM and plot word cloud (Max = 100)
+for (i in 1:length(corpus)) {
+    wordcloud(words = colnames(dtMatrix[[i]]), freq = slam::col_sums(dtMatrix[[i]]), 
+        scale = c(3, 1), max.words = 100, random.order = FALSE, rot.per = 0.45, 
+        use.r.layout = FALSE, colors = brewer.pal(8, "Dark2"))
+    title(Headings[i])
+}
+```
+```{r}
+```
+####13.  Ngram Tokenization
+```{r}
+```
+
+```{r Tokenization}
+
+
+# Define a function to make Unigram, Bigram and Trigram from the corpus
+# And then Plot them together with ggplot2 and gridExtra packages
+plot.Grams <- function (x=sampleB, subTitle="blogs", N=10) {
+# Use RWeka to get unigram token
+Tokenizer1 <- RWeka::NGramTokenizer(x, Weka_control(min = 1, max = 1))
+UniGram <- data.frame(table(Tokenizer1))
+head(UniGram)
+UniGram <- UniGram[order(UniGram$Freq, decreasing = TRUE),]
+colnames(UniGram) <- c("Word", "Freq")
+UniGram <- head(UniGram, N) 
+g1 <- ggplot(UniGram, aes(x=reorder(Word, Freq),y=Freq)) + 
+        geom_bar(stat="identity", fill="gray") + 
+        ggtitle(paste("unigrams", "-", subTitle)) + 
+        xlab("unigrams") + ylab("Frequency") + 
+        theme(axis.text.x=element_text(angle=90, hjust=1))
+# Use RWeka to get bigram token
+Tokenizer2 <- RWeka::NGramTokenizer(x, Weka_control(min = 2, max = 2, 
+                                                          delimiters = " \\r\\n\\t.,;:\"()?!"))
+BiGram <- data.frame(table(Tokenizer2))
+BiGram <- BiGram[order(BiGram$Freq, decreasing = TRUE),]
+colnames(BiGram) <- c("Word", "Freq")
+BiGram <- head(BiGram, N) 
+g2 <- ggplot(BiGram, aes(x=reorder(Word, Freq),y=Freq)) + 
+        geom_bar(stat="identity", fill="light blue") + 
+        ggtitle(paste("bigrams", "-", subTitle)) + 
+        xlab("bigrams") + ylab("Frequency") + 
+        theme(axis.text.x=element_text(angle=90, hjust=1))
+# Use RWeka to get trigram token
+Tokenizer3 <- RWeka::NGramTokenizer(sampleB, Weka_control(min = 3, max = 3, 
+                                                          delimiters = " \\r\\n\\t.,;:\"()?!"))
+TriGram <- data.frame(table(Tokenizer3))
+TriGram <- TriGram[order(TriGram$Freq, decreasing = TRUE),]
+colnames(TriGram) <- c("Word", "Freq")
+TriGram <- head(TriGram, N) 
+g3 <- ggplot(TriGram, aes(x=reorder(Word, Freq),y=Freq)) + 
+        geom_bar(stat="identity", fill="green") + 
+        ggtitle(paste("trigrams", "-", subTitle)) + 
+        xlab("trigrams") + ylab("Frequency") + 
+        theme(axis.text.x=element_text(angle=90, hjust=1))
+# Put three plots into 1 row 3 columns
+gridExtra::grid.arrange(g1, g2, g3, ncol = 3)
+}
+```
+####14. Plot the frequencies
+```{r Plotting}
+plot.Grams(x = sampleB, subTitle = "blogs", N = 10)
+plot.Grams(x = sampleN, subTitle = "news", N = 10)
+plot.Grams(x = sampleT, subTitle = "twitter", N = 10)
+```
+
+####15. Next Steps For Prediction Algorithm And Shiny App
+1. This concludes our exploratory analysis. The next steps of this capstone project would be to finalize our predictive algorithm,      and deploy our algorithm as a Shiny app.
+
+2. The predictive algorithm will be using n-gram model with frequency lookup similar to our exploratory analysis above. One possible    strategy would be to use the trigram model to predict the next word. If no matching trigram can be found, then the algorithm would    back off to the bigram model, and then to the unigram model if needed.
+
+3. The user interface of the Shiny app will consist of a text input box that will allow a user to enter a phrase. Then the app will     use our algorithm to suggest the most likely next word after a short delay. Our plan is also to allow the user to configure how      many words our app should suggest.
+
+
